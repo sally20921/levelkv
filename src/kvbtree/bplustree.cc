@@ -8,9 +8,10 @@
 namespace kvbtree {
 /********** MemNode **********/
 void MemNode::Insert(Slice *key) {
+	//allocate space for key first in the heap
     char *key_buf = (char *)malloc(key->size());
     memcpy(key_buf, key->data(), key->size());
-    {
+    {	//then insert in the memnode 
         std::unique_lock<std::mutex> lock(m_);
         sorted_run_.insert(Slice(key_buf, key->size()));
         size_ += key->size();
@@ -59,18 +60,35 @@ Slice MemNode::FirstKey() {
     return *it;
 }
 
+//memory 
+//sorted run 
+//<Slice, uint32_t, custom_cmp> map 
+
+//storage 
+//key: level[x][min_key]
+//4B: number of entries 
+//xB: [child_entries, key_size, key1]  
 /********** InternalNode **********/
+//key_array- is not used in InternalNode 
+
+//dirty bit true 
+//creation of a new empty node  
 InternalNode::InternalNode(Comparator *cmp, kvssd::KVSSD *kvd, InternalNode *p, int fanout, int level) 
 : cmp_(cmp), kvd_(kvd), parent_(p), level_(level), key_array_(NULL), dirty_(true), fanout_(fanout),
   sorted_run_(custom_cmp(cmp)) { }
 
+//convert SSD internal node to memory internal node 
+//dirty bit false 
+//buf layout: number of entries + child_entries + keysize + key 
+//buf == value of SSD internal node 
 InternalNode::InternalNode(Comparator *cmp, kvssd::KVSSD *kvd, InternalNode *p, int fanout, int level, char *buf, uint32_t size)
 : cmp_(cmp), kvd_(kvd), parent_(p), level_(level), key_array_(NULL), dirty_(false), fanout_(fanout),
   sorted_run_(custom_cmp(cmp)) {
-
+   //4B: number of entries 
     int num_entries = *(uint32_t *)buf;
     buf += sizeof(uint32_t);
-
+	
+   //[child_entries, key_size, key]
     for (int i = 0; i < num_entries; i++) {
         int child_entries = *(uint32_t *)buf;
         buf += sizeof(uint32_t);
@@ -83,13 +101,6 @@ InternalNode::InternalNode(Comparator *cmp, kvssd::KVSSD *kvd, InternalNode *p, 
         sorted_run_[key] = child_entries;
     }
 
-    // key_array_ = (Slice *)malloc(sizeof(Slice) * num_entries);
-    // for (int i = 0; i < num_entries; i++) {
-    //     int size = *(uint32_t *)buf;
-    //     (void) new (&key_array_[i]) Slice(buf+sizeof(uint32_t), size);
-    //     buf += size + sizeof(uint32_t);
-    // }
-
 }
 
 InternalNode::~InternalNode() {
@@ -101,8 +112,12 @@ InternalNode::~InternalNode() {
     }
 }
 
+//return min and max 
 void InternalNode::SearchKey(Slice *key, Slice &min, Slice &max) {
+
+    //returns an iterator to  (key+1) 
     auto it = sorted_run_.upper_bound(*key);
+
     if (it == sorted_run_.end()) {
         max = Slice(NULL, 0);
     }
@@ -114,42 +129,59 @@ void InternalNode::SearchKey(Slice *key, Slice &min, Slice &max) {
     min = it->first;
 }
 
+//notice here that child entries is number  of child entries 
 int InternalNode::GetChildEntries(Slice *key) {
     auto it = sorted_run_.find(*key);
     return it->second;
 }
 
 InternalNode* InternalNode::InsertEntry(Slice *key, int entries, int level) {
-    dirty_ = true; //mark dirty
+    
+   dirty_ = true; //mark dirty
+   
+   //entries here refer to number of child  entries 
+
+   //insert key into this internal node 
+   //first allocate space for key in heap 
     char *key_buf = (char *)malloc(key->size());
     memcpy(key_buf, key->data(), key->size());
+
+   //by inserting key in this internal node, it might have to split 
     InternalNode *split_node = NULL;
+    //insert it in sorted run 
     sorted_run_[Slice(key_buf, key->size())] = entries;
+
+    //split 
     if (sorted_run_.size() >= fanout_) {
         int split_size = sorted_run_.size()/2;
+        //new internal node 
         split_node = new InternalNode(cmp_, kvd_, parent_, fanout_, level);
         for (int i = 0; i < split_size; i++) {
             auto it = sorted_run_.begin();
             split_node->InsertEntry((Slice *)&(it->first), it->second, level); // willnot overflow
             sorted_run_.erase(it);
         }
-        // update split node (left)
-        //split_node->Flush(level);
     }
-    // update current node
-    //Flush(level);
-    return split_node;
+    return split_node;//return NULL or newly created internal node if there was split
 }
 
 Slice InternalNode::FirstKey() {
     auto it = sorted_run_.begin();
-    if (it->second == 0) {
+    if (it->second == 0) { //begin could be dummy node  (NULL, 0) 
         ++it;
     }
     return it->first;
 }
 
+
+//in memory 
+//sorted run : map <Slice, int32_t, custom_cmp>
+//in storage :
+//level[x][min_key]
+//4B: number of entries, xB: child entries(uint32_t)+keysize+key
 void InternalNode::Flush() {
+
+    //buf variable is for inner SSD value 
     // 1, determin size first
     int buf_size = sizeof(uint32_t); // initial bytes for num of entries
     for (auto it = sorted_run_.begin(); it != sorted_run_.end(); ++it) {
@@ -159,15 +191,16 @@ void InternalNode::Flush() {
     // 2, assembly the bulk keys
     char *buf = (char *)malloc(buf_size);
     char *p = buf;
-    *(uint32_t *)p = sorted_run_.size();
+    *(uint32_t *)p = sorted_run_.size();//number of entries in the node 
     p += sizeof(uint32_t);
+
     for (auto it = sorted_run_.begin(); it != sorted_run_.end(); ++it) {
-        *(uint32_t *)p = it->second;
+        *(uint32_t *)p = it->second;//number of child entries
         p += sizeof(uint32_t);
-        uint32_t size = it->first.size();
+        uint32_t size = it->first.size();//key_size
         *(uint32_t *)p = size;
         p += sizeof(uint32_t);
-        memcpy(p, it->first.data(), size);
+        memcpy(p, it->first.data(), size);//key 
         p += size;
     }
 
@@ -181,23 +214,42 @@ void InternalNode::Flush() {
     free(buf);
 }
 
+//entries here is the number of child entries for key
 void InternalNode::UpdateChildEntries(Slice *key, int entries) {
     dirty_ = true;
     sorted_run_[*key] = entries;
 }
 
-/********** LeafNode **********/
+//memory 
+//sorted run
+//<Slice, custom_cmp> set 
+
+//storage 
+//key: leaf[min_key]
+//xB: [key_size, nex_leaf_key]
+//xB: [key_size, key1], [key_size, key2] 
+
+/********** LeafNode **********/ 
+
+//create new leaf node in memory 
 LeafNode::LeafNode(Comparator *cmp, kvssd::KVSSD *kvd, InternalNode *p) 
 : cmp_(cmp), kvd_(kvd), parent_(p), buf_(NULL), entries_(0), sorted_run_(custom_cmp(cmp)) {}
+
+//buf is the same as value format in SSD  
+//buf to in memory leaf node 
 LeafNode::LeafNode(Comparator *cmp, kvssd::KVSSD *kvd, InternalNode *p, char *buf, uint32_t size) 
 : cmp_(cmp), kvd_(kvd), parent_(p), buf_(buf), entries_(0), sorted_run_(custom_cmp(cmp)) {
-    // decode next leaf pointer
+    
+// decode next leaf pointer
     int next_key_size = *(uint32_t *)buf;
     buf += sizeof(uint32_t);
-    if (next_key_size != 0) {
+    if (next_key_size != 0) {//there is next leaf node 
+        //next_leaf_ is string 
         next_leaf_.append(buf, next_key_size);
         buf += next_key_size;
     }
+    //append buf as key in sorted run (or in this leaf node)
+   //buf format : key_size_1, key_1, key_size_2, key_size_2
     Append(buf, size-sizeof(uint32_t)-next_key_size);
 }
 
@@ -205,10 +257,15 @@ LeafNode::~LeafNode() {
     if (buf_!=NULL) free(buf_);
 }
 
+//add key in memory to leaf node in memory 
 void LeafNode::Add(Slice *key) {
     sorted_run_.insert(*key);
 }
 
+//do not confuse this with add 
+//There is append and Append 
+//buf is in format of value in SSD
+//appends buf in form of sorted run in this leaf node 
 void LeafNode::Append(char *buf, uint32_t size) {
     while (size > 0) {
         int key_size = *(uint32_t *)buf;
