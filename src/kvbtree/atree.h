@@ -208,6 +208,7 @@ public:
     bool Insert(Slice *key);
     bool Write(WriteBatch *batch);
 
+    class 
     class Iterator {
     private: 
         KVBplusTree *tree_;
