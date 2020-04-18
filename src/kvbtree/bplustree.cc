@@ -534,14 +534,17 @@ void KVBplusTree::CheckpointTree() {
 void KVBplusTree::BulkAppend(MemNode *mem, int MemEntriesWaterMark) {
     while (mem->NumEntries() > MemEntriesWaterMark || mem->Size() > MAX_MEM_SIZE) {
         // 1, get smallest key in MemNode
+	//key_target key to insert 
         Slice key_target = mem->FirstKey();
         std::string key_target_str = key_target.ToString();
 
         // 2, find leaf node
         InternalNode *node = root_;
+	//I don't think we use lower_key here. only use upper_key.
         Slice lower_key, upper_key;
         std::stack<Slice> upper_key_stack; // use to determine key upper bound
         
+	//from root get to the leaf node 
         for (int i = 0; i < level_; i++) {
             node->SearchKey(&key_target, lower_key, upper_key);
             if (i == level_ - 1) {
