@@ -2,6 +2,12 @@
 * 
 */
 
+//Things that have changed 
+//index number is kept inside the tree as public variable 
+
+//Things to add
+//checkpoint in the background 
+//for every insert or delete, updated nodes are logged (or flushed) with index number 
 #include <stack>
 #include "bplustree.h"
 
@@ -253,6 +259,7 @@ LeafNode::LeafNode(Comparator *cmp, kvssd::KVSSD *kvd, InternalNode *p, char *bu
     Append(buf, size-sizeof(uint32_t)-next_key_size);
 }
 
+//notice leaf node does not have dirty bit, so we do not flush
 LeafNode::~LeafNode() {
     if (buf_!=NULL) free(buf_);
 }
@@ -276,24 +283,33 @@ void LeafNode::Append(char *buf, uint32_t size) {
     }
 }
 
+//next_leaf_ is std::string
 void LeafNode::UpdateNextLeaf(Slice *key) {
     next_leaf_ = key->ToString();
 }
 
+//split this leaf node 
 LeafNode* LeafNode::Split() {
+
     LeafNode *split_node = new LeafNode(cmp_, kvd_, parent_);
+
     int size = sorted_run_.size()/2;
+
+    //add it in split_node and erase it in sorted run 
     for (int i = 0; i < size; i++) {
         auto it = sorted_run_.begin();
         Slice key = *it;
         split_node->Add(&key);
         sorted_run_.erase(it);
     }
+
     // update next leaf pointer
+   //update split_node next_leaf to this leaf
     auto it = sorted_run_.begin();
     Slice next_leaf(it->data(), it->size());
     split_node->UpdateNextLeaf(&next_leaf);
-
+	
+    //return the newly created node 
     return split_node;
 }
 
@@ -302,9 +318,17 @@ Slice LeafNode::FirstKey() {
     return *it;
 }
 
+
+//memory: sorted_run_ std::set<Slice, custom_cmp>
+//storage
+//key: leaf+[min_key}
+//value: key_size, next_leaf_key, key_size, key1, key_size, key2 
 void LeafNode::Flush() {
+    //variable buf is for making value in key-value leaf node 
+
     // 1, determin size first
     int buf_size = sizeof(uint32_t) + next_leaf_.size(); // initial next leaf pointer
+    //key_size+key
     for (auto it = sorted_run_.begin(); it != sorted_run_.end(); ++it) {
         buf_size += it->size() + sizeof(uint32_t);
     }
@@ -318,6 +342,7 @@ void LeafNode::Flush() {
     p += sizeof(uint32_t);
     memcpy(p, next_leaf_.data(), next_leaf_.size());
     p += next_leaf_.size();
+    //keysize+key
     for (auto it = sorted_run_.begin(); it != sorted_run_.end(); ++it) {
         uint32_t size = it->size();
         *(uint32_t *)p = size;
@@ -327,9 +352,9 @@ void LeafNode::Flush() {
     }
 
     // 3, write to kvssd
-    std::string leaf_key_str = "leaf"+FirstKey().ToString();
-    
-    kvssd::Slice leaf_key(leaf_key_str);
+    std::string leaf_key_str = "leaf"+FirstKey().ToString();//key     
+    kvssd::Slice leaf_key(leaf_key_str);//notice here we have to store key-value tuple
+    //in terms of kvssd::Slice 
     kvssd::Slice leaf_val(buf, buf_size);
     kvd_->kv_store(&leaf_key, &leaf_val);
 
@@ -343,11 +368,12 @@ std::set<Slice, custom_cmp>::iterator LeafNode::SeekToFirst() {
 
 std::set<Slice, custom_cmp>::iterator LeafNode::Seek(Slice *key) {
     auto it = sorted_run_.lower_bound(*key);
+   //this returns iterator that starts from key 
     return it;
 }
 
 bool LeafNode::Valid(std::set<Slice, custom_cmp>::iterator it) {
-    return it!=sorted_run_.end();
+    return it!=sorted_run_.end();//iterator it doesn not start from the end of sorted_run_
 }
 
 

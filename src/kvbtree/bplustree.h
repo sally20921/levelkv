@@ -2,7 +2,8 @@
 * 07/12/2019
 * 
 */
-
+//Things that have changed
+//index number is kept inside the tree as public variable
 #ifndef _bplustree_h
 #define _bplustree_h
 
