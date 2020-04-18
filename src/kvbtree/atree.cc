@@ -15,6 +15,7 @@
 #include "bplustree.h"
 
 namespace kvbtree {
+//sorted_run_ <Slice, custom_cmp>set 
 /********** MemNode **********/
 void MemNode::Insert(Slice *key) {
 	//allocate space for key first in the heap
