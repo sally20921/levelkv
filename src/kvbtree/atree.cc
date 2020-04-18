@@ -384,6 +384,41 @@ bool LeafNode::Valid(std::set<Slice, custom_cmp>::iterator it) {
 //key: checkpoint#[index_num_]
 //value: [key_size][key]
 /********** KVBplusTree **********/
+KVBplusTree::KVBplusTree (Comparator *cmp, kvssd::KVSSD *kvd, int fanout, int cache_size): cmp_(cmp), kvd_(kvd), cache_size_(cache_size), level_(1), fanout_(fanout) {
+	//new index or not? check if there is checkpoint in SSD
+	bool newDB = ReadCheckpoint();
 
+	Slice dummy(NULL, 0);
+	
+ 	//initialization
+	mem_ = new MemNode(cmp_);
+	imm_ = NULL;
+	
+	index_num_ = 0;
 
+	if (newDB) {//make a brand new tree
+		root_ = new InternalNode(cmp_, kvd_, NULL, fanout_, 0);
+		root_->InsertEntry(&dummy, 0, 0); // add dummy head
+
+		// write a dummy leaf node
+		
+	}//this is more like the recover state 
+	else {//gonna have to construct the tree again from checkpoint or buf
+	}
+	
+	//background thread 
+	std::thread thrd = std::thread(&KVBplusTree::bg_worker, this, this);
+	t_BG = thrd.native_handle();
+	thrd.detach();
+	}
+	
+	//this is the same as the crash scenario except we lose mem, imm as well
+	KVBplusTree::~KVBplusTree() {	
+
+	}
+	
+	void KVBplusTree::Append(Slice *key) {
+		Slice key_target  =  *key;
+		std::string key_target_str = key_target.ToString();
+	}
 } // end of kvbtree namespace
