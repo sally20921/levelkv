@@ -60,19 +60,19 @@ inline int keycmp(const key_t &a, const key_t &b) {
     }\
     bool operator== (const type &l, const key_t &r) {\
         return keycmp(l.key, r) == 0;\
-    }
+    }\
 //off_t  signed integer used to represent file sizes
 //this type is transparently replaced by off64_t 
 //off_t acts same as the pointer 
 /* meta information of B+ tree */
-typedef struct {
+struct meta_t{
 	size_t internal_node_num; /* how many internal nodes */
 	size_t leaf_node_num;     /* how many leafs */
 	size_t height;            /* height of tree (exclude leafs) */
 	off_t slot;        /* where to store new block */
 	off_t root_offset; /* where is the root of internal nodes */
 	off_t leaf_offset; /* where is the first leaf */
-}meta_t;
+};
 
 /* internal nodes' index segment */
 struct index_t {
@@ -114,7 +114,7 @@ class bplus_tree {
 	public:
 	bplus_tree();
 	int insert(const key_t& key);
-	meta_t get_meta const {
+	meta_t get_meta() {
 		return meta;
 	};
 
@@ -135,7 +135,7 @@ class bplus_tree {
 
 	/* insert into leaf without split */
     void insert_record_no_split(leaf_node_t *leaf,
-                                const key_t &key, const value_t &value);
+                                const key_t &key);
 
     /* add key to the internal node */
     void insert_key_to_index(off_t offset, const key_t &key,
@@ -153,7 +153,9 @@ class bplus_tree {
     template<class T>
     void node_remove(T *prev, T *node);
 
-
+    /* multi-level file open/close */
+    mutable FILE *fp;
+    mutable int fp_level;
 
      /* alloc from heap */
     off_t alloc(size_t size)
@@ -167,13 +169,15 @@ class bplus_tree {
     {
         leaf->n = 0;
         meta.leaf_node_num++;
-	return new leaf_node_t;
+	off_t temp =(long int) new leaf_node_t;
+	return temp;
     }
     off_t alloc(internal_node_t *node)
     {
         node->n = 1;
         meta.internal_node_num++;
-        return new internal_node_t;
+        off_t temp =(long int) new internal_node_t;
+        return temp;
     }
 
     void unalloc(leaf_node_t *leaf, off_t offset)
@@ -203,7 +207,7 @@ class bplus_tree {
     {
         //return map(block, offset, sizeof(T));
        // *block = *(T*)offset;
-	memcpy(block, offset, sizeof(T));
+	memcpy(block, (void*)offset, sizeof(T));
 	return 0;
     }
 
@@ -225,8 +229,8 @@ class bplus_tree {
         //return unmap(block, offset, sizeof(T));
 	//offset = new T;
 	//*offset = *block;
-	offset = malloc(sizeof(T));
-        strcpy(*offset, *block);
+	offset = (off_t)malloc(sizeof(T));
+        memcpy((void*)offset,(void*) block, sizeof(T));
 	return 0;
     }
 
@@ -265,7 +269,11 @@ inline record_t *find(leaf_node_t &node, const key_t &key) {
     return lower_bound(begin(node), end(node), key);
 }
 
-bplus_tree::bplus_tree() { init_from_empty();}
+bplus_tree::bplus_tree()
+	: fp(NULL), fp_level(0) 
+{ 
+	init_from_empty();
+}
 
 
 int bplus_tree::insert(const key_t& key)
@@ -300,9 +308,9 @@ int bplus_tree::insert(const key_t& key)
 
         // which part do we put the key
         if (place_right)
-            insert_record_no_split(&new_leaf, key, value);
+            insert_record_no_split(&new_leaf, key);
         else
-            insert_record_no_split(&leaf, key, value);
+            insert_record_no_split(&leaf, key);
 
         // save leafs
         unmap(&leaf, offset);
@@ -312,7 +320,7 @@ int bplus_tree::insert(const key_t& key)
         insert_key_to_index(parent, new_leaf.children[0].key,
                             offset, leaf.next);
     } else {
-        insert_record_no_split(&leaf, key, value);
+        insert_record_no_split(&leaf, key);
         unmap(&leaf, offset);
     }
 
@@ -346,9 +354,9 @@ void bplus_tree::insert_key_to_index(off_t offset, const key_t &key,
 
     internal_node_t node;
     map(&node, offset);
-    assert(node.n <= meta.order);
+    
 
-    if (node.n == meta.order) {
+    if (node.n == BP_ORDER) {
         // split when full
 
         internal_node_t new_node;
@@ -394,7 +402,7 @@ void bplus_tree::insert_key_to_index(off_t offset, const key_t &key,
 }
 
 void bplus_tree::insert_key_to_index_no_split(internal_node_t &node,
-                                              const key_t &key, off_t value)
+                                              const key_t &key)
 {
     index_t *where = upper_bound(begin(node), end(node) - 1, key);
 
@@ -404,7 +412,7 @@ void bplus_tree::insert_key_to_index_no_split(internal_node_t &node,
     // insert this key
     where->key = key;
     where->child = (where + 1)->child;
-    (where + 1)->child = value;
+    //(where + 1)->child = value;
 
     node.n++;
 }
@@ -493,20 +501,20 @@ void bplus_tree::init_from_empty()
     meta.slot = OFFSET_BLOCK;
 
     // init root node
-    internal_node_t root;
-    root.next = root.prev = root.parent = 0;
-    meta.root_offset = malloc(&root);
+    internal_node_t* root = new internal_node_t;
+    root->next = root->prev = root->parent = 0;
+    meta.root_offset = (off_t) root;
 
     // init empty leaf
-    leaf_node_t leaf;
-    leaf.next = leaf.prev = 0;
-    leaf.parent = meta.root_offset;
-    meta.leaf_offset = root.children[0].child = malloc(&leaf);
+    leaf_node_t* leaf = new leaf_node_t;
+    leaf->next = leaf->prev = 0;
+    leaf->parent = meta.root_offset;
+    meta.leaf_offset = root->children[0].child = (off_t) leaf;
 
     // save
     unmap(&meta, OFFSET_META);
     unmap(&root, meta.root_offset);
-    unmap(&leaf, root.children[0].child);
+    unmap(&leaf, root->children[0].child);
 }
 
 }
