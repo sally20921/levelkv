@@ -12,62 +12,11 @@
 //checkpoint in the background 
 //for every insert or delete, updated nodes are logged (or flushed) with index number 
 #include <stack>
-#include "bplustree.h"
+#include "btree.h"
 
-namespace kvbtree {
-/********** MemNode **********/
-void MemNode::Insert(Slice *key) {
-	//allocate space for key first in the heap
-    char *key_buf = (char *)malloc(key->size());
-    memcpy(key_buf, key->data(), key->size());
-    {	//then insert in the memnode 
-        std::unique_lock<std::mutex> lock(m_);
-        sorted_run_.insert(Slice(key_buf, key->size()));
-        size_ += key->size();
-    }
-}
-
-void MemNode::BulkKeys(Slice *hk, uint32_t size, char *&buf, int &buf_entries, int &buf_size){
-    // 1, determin size first
-    buf_size = 0;
-    auto it = sorted_run_.begin();
-    buf_entries = 0;
-    if (hk->data() == NULL) {
-        do {
-            buf_size += it->size() + sizeof(uint32_t);
-            ++it;
-            buf_entries++;
-        } while (buf_entries < size && it != sorted_run_.end());
-    }
-    else {
-        do {
-            buf_size += it->size() + sizeof(uint32_t);
-            ++it;
-            buf_entries++;
-        } while (it != sorted_run_.end() && buf_entries < size && it->compare(*hk) < 0);
-    }
-    
-    //printf("bulk size %d\n", buf_entries);
-    // 2, assembly the bulk keys
-    buf = (char *)malloc(buf_size);
-    char *p = buf;
-    for (int i = 0; i < buf_entries; i++) {
-        it = sorted_run_.begin();
-        uint32_t size = it->size();
-        *(uint32_t *)p = size;
-        p += sizeof(uint32_t);
-        memcpy(p, it->data(), size);
-        p += size;
-        free((void *)it->data());
-        sorted_run_.erase(it); // iterator will advance
-    }
-    size_ -= buf_size - buf_entries*sizeof(uint32_t);
-}
-
-Slice MemNode::FirstKey() {
-    auto it = sorted_run_.begin();
-    return *it;
-}
+namespace inmem {
+	bool Node::Get_IsLeaf() { return isLeaf_;}
+	vector<std::string> Node::Get_keys() { return keys_;}
 
 //memory 
 //sorted run 
@@ -82,72 +31,17 @@ Slice MemNode::FirstKey() {
 
 //dirty bit true 
 //creation of a new empty node  
-InternalNode::InternalNode(Comparator *cmp, kvssd::KVSSD *kvd, InternalNode *p, int fanout, int level) 
-: cmp_(cmp), kvd_(kvd), parent_(p), level_(level), key_array_(NULL), dirty_(true), fanout_(fanout),
-  sorted_run_(custom_cmp(cmp)) { }
-
-//convert SSD internal node to memory internal node 
-//dirty bit false 
-//buf layout: number of entries + child_entries + keysize + key 
-//buf == value of SSD internal node 
-InternalNode::InternalNode(Comparator *cmp, kvssd::KVSSD *kvd, InternalNode *p, int fanout, int level, char *buf, uint32_t size)
-: cmp_(cmp), kvd_(kvd), parent_(p), level_(level), key_array_(NULL), dirty_(false), fanout_(fanout),
-  sorted_run_(custom_cmp(cmp)) {
-   //4B: number of entries 
-    int num_entries = *(uint32_t *)buf;
-    buf += sizeof(uint32_t);
-	
-   //[child_entries, key_size, key]
-    for (int i = 0; i < num_entries; i++) {
-        int child_entries = *(uint32_t *)buf;
-        buf += sizeof(uint32_t);
-        int size = *(uint32_t *)buf;
-        buf += sizeof(uint32_t);
-        char *key_buf = (char *)malloc(size);
-        memcpy(key_buf, buf, size);
-        Slice key(size==0?NULL:key_buf, size);
-        buf += size;
-        sorted_run_[key] = child_entries;
-    }
-
-}
-
-InternalNode::~InternalNode() {
-    // Write back to storage
-    if(dirty_) Flush();
-    // clean up internal key buffers
-    for (auto it = sorted_run_.begin(); it != sorted_run_.end(); ++it) {
-        free((void *)(it->first.data()));
-    }
-}
-
-//return min and max 
-void InternalNode::SearchKey(Slice *key, Slice &min, Slice &max) {
-
-    //returns an iterator to  (key+1) 
-    auto it = sorted_run_.upper_bound(*key);
-
-    if (it == sorted_run_.end()) {
-        max = Slice(NULL, 0);
-    }
-    else {
-        max = it->first;
-    }
-    assert(it != sorted_run_.begin());
-    it--; 
-    min = it->first;
-}
+InternalNode::InternalNode(Comparator *cmp, kvssd::KVSSD *kvd) 
+: cmp_(cmp), kvd_(kvd), parent_(p), dirty_(false), isLeaf(false) ,
+  sorted_run_() { }
 
 //notice here that child entries is number  of child entries 
-int InternalNode::GetChildEntries(Slice *key) {
-    auto it = sorted_run_.find(*key);
-    return it->second;
+vector<Node*> InternalNode::GetChildren() {
+    return children_;
 }
 
-InternalNode* InternalNode::InsertEntry(Slice *key, int entries, int level) {
+InternalNode* InternalNode::InsertEntry(std::string key, Node* rightChild) {
     
-   dirty_ = true; //mark dirty
-   
    //entries here refer to number of child  entries 
 
    //insert key into this internal node 

@@ -13,6 +13,10 @@
 #include <mutex>
 #include <condition_variable>
 #include <thread>
+#include <string>
+#include <vector>
+#include <stack>
+#include <algorithm>
 
 #include "slice.h"
 #include "cache.h"
@@ -27,7 +31,7 @@
 #define DEF_FANOUT 1024
 #define DEF_CACHE_ITEMS 4096
 
-namespace kvbtree {
+namespace inmem {
 
 struct custom_cmp {
   explicit custom_cmp(Comparator *cmp) : cmp_(cmp) {}
@@ -61,14 +65,16 @@ public:
     while (!ready_) cv_.wait(lck);
   }
 };
+
+//generic Node 
 class Node {
 	private:
-		bool isLeaf;
+		bool isLeaf_;
     		bool dirty_;
 	
 		Comparator *cmp_;
 		kvssd::KVSSD *kvd_;
-		
+		std::vector<std::string> keys_;
 }
 // In memory format
 /*  For write: sorted structure sorted_run_ (skiplist, rb tree)
@@ -83,7 +89,7 @@ class InternalNode : public Node {
 private:
     
     int level_;
-     std::map<Slice, Node*, custom_cmp> sorted_run_;
+     std::vector<Node*> children_;
 
 public:
     InternalNode(Comparator *cmp, kvssd::KVSSD *kvd, InternalNode *p, int fanout, int level);
@@ -109,14 +115,15 @@ public:
 /*  xB: [key_size, next_leaf_key]
     xB: [key_size, key1], [key_size, key2] ...
  */
-class LeafNode {
+class LeafNode : public Node {
 private:
    
     char *buf_;
     uint32_t entries_;
-    std::set<Slice, custom_cmp> sorted_run_;
+   // std::set<Slice, custom_cmp> sorted_run_;
 public:
     // node pointer
+    LeafNode* prev;
     LeafNode* next;
     LeafNode(Comparator *cmp, kvssd::KVSSD *kvd, InternalNode *p);
     LeafNode(Comparator *cmp, kvssd::KVSSD *kvd, InternalNode *p, char *buf, uint32_t size);
@@ -145,8 +152,8 @@ private:
     kvssd::KVSSD* kvd_;
     std::mutex mutex_;
     Node *root_;
-    Cache *innode_cache_;
-    std::unique_ptr<AtomicCache> concurr_cache_; // concurrent cache (for iterator only)
+    //Cache *innode_cache_;
+    //std::unique_ptr<AtomicCache> concurr_cache_; // concurrent cache (for iterator only)
     int cache_size_;
     uint32_t level_; // Non-leaf levels
     int fanout_;
