@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <list>
 #include <algorithm>
+#inlclude "slice.h"
 
 using std::swap;
 using std::binary_search;
@@ -61,6 +62,23 @@ return keycmp(l, r.key) == 0;\
 bool operator== (const type &l, const key_t &r) {\
 return keycmp(l.key, r) == 0;\
 }\
+
+
+class WriteBatch {
+public: 
+	WriteBatch();
+	~WriteBatch();
+
+	void Put(Slice &key);
+	void Delete(Slice &key);
+	void Clear();
+
+	std::vector<Slice>::iterator Iterator();
+	bool End(std::vector<Slice>::iterator  &it);
+private:
+	std::vector<Slice> list_;
+};
+
 //off_t  signed integer used to represent file sizes
     //this type is transparently replaced by off64_t
     //off_t acts same as the pointer
@@ -525,5 +543,18 @@ return keycmp(l.key, r) == 0;\
         unmap(&root, meta.root_offset);
         unmap(&leaf, root->children[0].child);
     }
+	
+	WriteBatch::WriteBatch() {}
+	WriteBatch::~WriteBatch() {}
+
+	void WriteBatch::Put(Slice &key){
+	}
+	
+ 	void WriteBatch::Delete(Slice &key) {
+	}
+
+	void WriteBatch::Clear() {
+	
+	}
    
 }

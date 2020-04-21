@@ -1,14 +1,8 @@
-/* write_batch.h
-* 07/31/2019
-* 
-*/
-
-#ifndef _kvbtre_write_batch_h_
-#define _kvbtre_write_batch_h_
+/* write_batch.h*/
 
 #include <vector>
 #include "slice.h"
-namespace kvbtree{
+namespace kvatree{
 
 class WriteBatch {
 public:
