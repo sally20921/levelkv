@@ -7,10 +7,10 @@
 #define PRINT(a) fprintf(stderr, "\033[33m%s\033[0m \033[32m%s\033[0m\n", a, "Passed")
 
 #include "bpt.cc"
-namespace bpt {
+//namespace bpt {
 int main()
 {
-
+using namespace bpt;
 const int size = 128;
 
 bplus_tree* tree = new bplus_tree();
@@ -55,4 +55,4 @@ PRINT("Insert4Elements");
 
 return 0;
 }
-}
+//}

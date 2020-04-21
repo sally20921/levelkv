@@ -414,6 +414,17 @@ return keycmp(l.key, r) == 0;\
         
         node.n++;
     }
+
+    void bplus_tree::insert_record_no_split(leaf_node_t *leaf,
+                                        const key_t &key)
+{
+    record_t *where = upper_bound(begin(*leaf), end(*leaf), key);
+    std::copy_backward(where, end(*leaf), end(*leaf) + 1);
+
+    where->key = key;
+    //where->value = value;
+    leaf->n++;
+}
     
     void bplus_tree::reset_index_children_parent(index_t *begin, index_t *end,
                                                  off_t parent)
@@ -514,5 +525,5 @@ return keycmp(l.key, r) == 0;\
         unmap(&root, meta.root_offset);
         unmap(&leaf, root->children[0].child);
     }
-    
+   
 }
