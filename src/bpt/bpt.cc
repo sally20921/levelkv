@@ -138,10 +138,8 @@ class bplus_tree {
                                 const key_t &key);
 
     /* add key to the internal node */
-    void insert_key_to_index(off_t offset, const key_t &key,
-                             off_t value, off_t after);
-    void insert_key_to_index_no_split(internal_node_t &node, const key_t &key,
-                                      off_t value);
+    void insert_key_to_index(off_t offset, const key_t &key, off_t old, off_t after);
+    void insert_key_to_index_no_split(internal_node_t &node, const key_t &key);
 
     /* change children's parent */
     void reset_index_children_parent(index_t *begin, index_t *end,
