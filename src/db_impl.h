@@ -68,6 +68,8 @@ public:
   void open_idx() {
     if (options_.indexType == LSM)
       key_idx_ = NewLSMIndex(options_, kvd_);
+    else if (options_.indexType ==  ATREE)
+	key_idx_ = NewATreeIndex(options_, kvd_);
     else if (options_.indexType == BTREE)
       key_idx_ = NewBTreeIndex(options_, kvd_);
     else if (options_.indexType == BASE) {

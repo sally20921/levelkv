@@ -98,6 +98,7 @@ class KVIndex {
 };
 
 KVIndex* NewLSMIndex(const Options& options, kvssd::KVSSD* kvd);
+KVIndex* NewATreeIndex(const Options& options, kvssd::KVSSD* kvd);
 KVIndex* NewBTreeIndex(const Options& options, kvssd::KVSSD* kvd);
 KVIndex* NewBaseIndex(const Options& options, kvssd::KVSSD* kvd);
 KVIndex* NewInMemIndex(const Options& options, kvssd::KVSSD* kvd);

@@ -19,6 +19,7 @@ class Slice;
 
 enum IndexType {
   LSM,
+  ATREE,
   BTREE,
   BASE,
 	INMEM
@@ -59,7 +60,7 @@ struct Options {
   bool rangefilterEnabled;
 
   Options() : comparator(BytewiseComparator()),
-              indexType(LSM),
+              indexType(ATREE),
               prefetchEnabled(false),
               prefetchDepth(16),
               rangefilterEnabled(false) {
@@ -68,6 +69,8 @@ struct Options {
     if(env_p = std::getenv("INDEX_TYPE")) {
       if (strcmp(env_p, "LSM") == 0)
         indexType = LSM;
+      else if (strcmp(env_p, "ATREE") == 0)
+	indexType  = ATREE;
       else if (strcmp(env_p, "BTREE") == 0)
         indexType = BTREE;
       else if (strcmp(env_p, "BASE") == 0)
@@ -75,7 +78,7 @@ struct Options {
 			else if (strcmp(env_p, "INMEM") == 0)
 				indexType = INMEM;
       else
-        indexType = LSM;
+        indexType = ATREE;
     }
 
     if(env_p = std::getenv("PREFETCH_ENA")) {

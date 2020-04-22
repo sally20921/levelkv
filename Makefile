@@ -19,3 +19,14 @@ KVSSD_SRCS=$(HOME)/src/kvssd/kvssd.cc
 
 SRCS=$(DB_SRCS) $(KVATREE_SRCS) $(KVBTREE_SRCS) $(BASE_SRCS) $(INMEM_SRCS) $(UTIL_SRCS)
 
+all: kvssd shared 
+
+kvssd: 
+	$(CC) -shared -o $(HOME)/libs/libkvssd.so $(INCLUDES) $(KVSSD_SRCS) -L$(HOME)/libs -Wl,-rpath,$(HOME)/libs -lkvapi -lnuma $(CXXFLAG)
+
+shared:
+	$(CC) -shared -o $(HOME)/libs/$(TARGET) $(SRCS) $(INCLUDES) $(LIBS) $(CXXFLAG)
+
+clean: 	
+	rm -rf $(HOME)/libs/$(TARGET) $(HOME)/libs/libkvssd.so
+
